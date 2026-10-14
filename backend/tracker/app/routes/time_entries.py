@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from psycopg import Connection
 
+from ..activity import log_activity
 from ..db import execute, fetch_all, fetch_one
 from ..errors import ConflictError, ForbiddenError, NotFoundError
 from ..metrics import hours_to_days
@@ -144,6 +145,19 @@ def create_entry(ctx: Context) -> tuple[int, dict]:
            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (project_id, milestone_id, user_id, work_date, hours, note or "", ctx.user["id"]),
     )
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "time_logged",
+        project_id=project_id,
+        milestone_id=milestone_id,
+        entity_type="time_entry",
+        entity_id=row["id"],
+        user_id=user_id,
+        hours=float(hours),
+        work_date=work_date.isoformat(),
+        note=note or "",
+    )
     return 201, fetch_one(ctx.conn, ENTRY_SELECT + " WHERE t.id = %s", (row["id"],))
 
 
@@ -175,6 +189,19 @@ def update_entry(ctx: Context) -> tuple[int, dict]:
                WHERE id = %s""",
             (work_date or entry["work_date"], hours if hours is not None else entry["hours"],
              note if note is not None else entry["note"], milestone_id, entry["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "time_updated",
+        project_id=project["id"],
+        milestone_id=milestone_id,
+        entity_type="time_entry",
+        entity_id=entry["id"],
+        user_id=entry["user_id"],
+        hours=float(hours if hours is not None else entry["hours"]),
+        work_date=(work_date or entry["work_date"]).isoformat(),
+        note=note if note is not None else entry["note"],
+    )
     return 200, fetch_one(ctx.conn, ENTRY_SELECT + " WHERE t.id = %s", (entry["id"],))
 
 
@@ -186,6 +213,18 @@ def archive_entry(ctx: Context) -> tuple[int, None]:
         raise ConflictError("Time entry is already archived.")
     execute(ctx.conn, "UPDATE time_entries SET archived_at = now(), archived_by = %s WHERE id = %s",
             (ctx.user["id"], entry["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "time_archived",
+        project_id=entry["project_id"],
+        milestone_id=entry["milestone_id"],
+        entity_type="time_entry",
+        entity_id=entry["id"],
+        user_id=entry["user_id"],
+        hours=float(entry["hours"]),
+        work_date=entry["work_date"].isoformat(),
+    )
     return 204, None
 
 

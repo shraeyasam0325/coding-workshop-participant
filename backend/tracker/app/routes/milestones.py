@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from psycopg import Connection
 
+from ..activity import log_activity
 from ..db import execute, fetch_all, fetch_one
 from ..errors import ConflictError, NotFoundError
 from ..metrics import hours_to_days
@@ -163,6 +164,19 @@ def create_milestone(ctx: Context) -> tuple[int, dict]:
          data["budget"], status, status, ctx.user["id"]),
     )
     _set_members(ctx.conn, row["id"], data["user_ids"] or [])
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "milestone_created",
+        project_id=project["id"],
+        milestone_id=row["id"],
+        entity_type="milestone",
+        entity_id=row["id"],
+        milestone_name=data["name"],
+        status=status,
+        budget=float(data["budget"] or 0),
+        member_count=len(data["user_ids"] or []),
+    )
     return 201, _get(ctx.conn, row["id"])
 
 
@@ -191,6 +205,17 @@ def update_milestone(ctx: Context) -> tuple[int, dict]:
     execute(ctx.conn, f"UPDATE milestones SET {', '.join(sets)} WHERE id = %s", [*params, row["id"]])  # nosec B608
     if data["user_ids"] is not None:
         _set_members(ctx.conn, row["id"], data["user_ids"])
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "milestone_updated",
+        project_id=project["id"],
+        milestone_id=row["id"],
+        entity_type="milestone",
+        entity_id=row["id"],
+        changed_fields=sorted(k for k, val in data.items() if val is not None),
+        status=data["status"] or row["status"],
+    )
     return 200, _get(ctx.conn, row["id"])
 
 
@@ -202,4 +227,15 @@ def archive_milestone(ctx: Context) -> tuple[int, None]:
         raise ConflictError("Milestone is already archived.")
     execute(ctx.conn, "UPDATE milestones SET archived_at = now(), archived_by = %s WHERE id = %s",
             (ctx.user["id"], row["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "milestone_archived",
+        project_id=row["project_id"],
+        milestone_id=row["id"],
+        entity_type="milestone",
+        entity_id=row["id"],
+        milestone_name=row["name"],
+        status=row["status"],
+    )
     return 204, None

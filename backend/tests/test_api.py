@@ -104,7 +104,7 @@ class TestUsers:
     def test_admin_creates_employee_with_manager(self, admin):
         status, user = admin.post("/users", {
             "name": "New Person", "email": "new@example.com", "username": "newp",
-            "job_title": "Analyst", "role": "employee", "password": "Password1!",
+            "job_title": "Analyst", "salary": 95000, "role": "employee", "password": "Password1!",
             "manager_id": _user_id(admin, "mlopez"),
         })
         assert status == 201
@@ -114,19 +114,19 @@ class TestUsers:
     def test_duplicate_username_and_email(self, admin):
         status, body = admin.post("/users", {
             "name": "Dup", "email": "AISHA.PATEL@example.com", "username": "apatel",
-            "role": "employee", "password": "Password1!",
+            "salary": 68000, "role": "employee", "password": "Password1!",
         })
         assert status == 409 and set(body["error"]["details"]) == {"username", "email"}
 
     def test_manager_must_be_a_manager(self, admin):
         status, body = admin.post("/users", {
-            "name": "X", "email": "x@example.com", "username": "xx", "role": "employee",
-            "password": "Password1!", "manager_id": _user_id(admin, "apatel"),
+            "name": "X", "email": "x@example.com", "username": "xx", "salary": 70000,
+            "role": "employee", "password": "Password1!", "manager_id": _user_id(admin, "apatel"),
         })
         assert status == 400 and "manager_id" in body["error"]["details"]
 
     def test_only_admin_creates_users(self, manager, employee):
-        body = {"name": "X", "email": "x@example.com", "username": "xx", "role": "employee", "password": "Password1!"}
+        body = {"name": "X", "email": "x@example.com", "username": "xx", "salary": 65000, "role": "employee", "password": "Password1!"}
         assert manager.post("/users", body)[0] == 403
         assert employee.post("/users", body)[0] == 403
 
@@ -148,7 +148,21 @@ class TestUsers:
         status, users = employee.get("/users")
         assert status == 200
         assert {u["username"] for u in users} == {"apatel", "mlopez"}
+        assert all(u["salary"] is None for u in users if u["id"] != employee.user["id"])
+        self_row = next(u for u in users if u["id"] == employee.user["id"])
+        assert self_row["salary"] == employee.user["salary"]
         assert employee.put(f"/users/{employee.user['id']}", {"name": "Me"})[0] == 403
+
+    def test_salary_visibility_is_restricted_to_admin_and_self(self, admin, employee, manager):
+        status, user = admin.get(f"/users/{_user_id(admin, 'apatel')}")
+        assert status == 200
+        assert user["salary"] is not None
+        status, self_view = employee.get(f"/users/{employee.user['id']}")
+        assert status == 200
+        assert self_view["salary"] == employee.user["salary"]
+        status, other = manager.get(f"/users/{_user_id(manager, 'apatel')}")
+        assert status == 200
+        assert other["salary"] is None
 
     def test_user_detail_includes_projects_and_hours(self, admin):
         status, user = admin.get(f"/users/{_user_id(admin, 'apatel')}")

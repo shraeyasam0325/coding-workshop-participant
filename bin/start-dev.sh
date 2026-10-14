@@ -329,18 +329,48 @@ fi
 
 # Install pip requirements into each Python service directory for hot-reload
 # Skip if requirements.txt hasn't changed since last install (avoids slow PyPI lookups)
+if ! command -v python3.13 >/dev/null 2>&1 || ! python3.13 -m pip --version >/dev/null 2>&1; then
+    echo "ERROR: Python 3.13 with pip is required to prepare Lambda dependencies"
+    exit 1
+fi
+
+pip_requirements_installed() {
+    local req_file="$1"
+    local target_dir="$2"
+    local installed_packages requirement package_name normalized_name
+
+    installed_packages=$(python3.13 -m pip list --path "$target_dir" --format=freeze 2>/dev/null \
+        | cut -d= -f1 | tr '[:upper:]' '[:lower:]' | tr -d '._-')
+    while IFS= read -r requirement || [ -n "$requirement" ]; do
+        requirement="${requirement%%#*}"
+        package_name=$(printf '%s\n' "$requirement" \
+            | sed -E 's/[[:space:]]*[<=>!~].*$//; s/\[.*$//; s/^[[:space:]]+|[[:space:]]+$//g')
+        [ -z "$package_name" ] && continue
+        [[ "$package_name" == -* ]] && continue
+        normalized_name=$(printf '%s' "$package_name" | tr '[:upper:]' '[:lower:]' | tr -d '._-')
+        if ! printf '%s\n' "$installed_packages" | grep -Fqx -- "$normalized_name"; then
+            return 1
+        fi
+    done < "$req_file"
+}
+
 shopt -s nullglob
 for req in "$PROJECT_ROOT"/backend/*/requirements.txt; do
     svc_dir="$(dirname "$req")"
     REQS_HASH=$(md5sum "$req" 2>/dev/null | cut -d' ' -f1)
     HASH_FILE="$svc_dir/.pip_installed"
-    if [ "$(cat "$HASH_FILE" 2>/dev/null)" = "$REQS_HASH" ]; then
+    CACHE_KEY="pip-target-v1:$REQS_HASH"
+    if [ "$(cat "$HASH_FILE" 2>/dev/null)" = "$CACHE_KEY" ] \
+        && pip_requirements_installed "$req" "$svc_dir"; then
         echo -e "  pip requirements for $(basename "$svc_dir") already up to date, skipping..."
         continue
     fi
     echo -e "  Installing pip requirements for $(basename "$svc_dir")..."
-    pip install --quiet --target="$svc_dir" -r "$req" 2>/dev/null || true
-    echo "$REQS_HASH" > "$HASH_FILE"
+    if ! python3.13 -m pip install --quiet --target="$svc_dir" -r "$req"; then
+        echo -e "  ✗ Failed to install pip requirements for $(basename "$svc_dir")"
+        exit 1
+    fi
+    echo "$CACHE_KEY" > "$HASH_FILE"
 done
 
 # Install npm dependencies into each Node.js service directory for hot-reload

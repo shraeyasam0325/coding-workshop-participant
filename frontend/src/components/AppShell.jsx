@@ -12,8 +12,8 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import PeopleOutline from '@mui/icons-material/PeopleOutline';
 import Inventory2Outlined from '@mui/icons-material/Inventory2Outlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import { useAuth } from '../services/AuthContext';
-import { useNotify } from '../services/NotifyContext';
+import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
+import { useAuth } from '../services/AuthContext';import { useNotify } from '../services/NotifyContext';
 import { tokens } from '../theme';
 import { ROLE_LABEL } from '../utils/format';
 import ChangePasswordDialog from './forms/ChangePasswordDialog';
@@ -38,7 +38,10 @@ function navItems(role) {
     { to: '/time', label: role === 'employee' ? 'My time' : 'Time log', icon: <ScheduleOutlined /> },
   ];
   if (role !== 'employee') items.push({ to: '/people', label: role === 'manager' ? 'People' : 'People & teams', icon: <PeopleOutline /> });
-  if (role === 'admin') items.push({ to: '/archive', label: 'Archive', icon: <Inventory2Outlined /> });
+  if (role === 'admin') {
+    items.push({ to: '/activity', label: 'Activity log', icon: <HistoryOutlined /> });
+    items.push({ to: '/archive', label: 'Archive', icon: <Inventory2Outlined /> });
+  }
   return items;
 }
 
@@ -59,7 +62,7 @@ function SidebarContent({ onNavigate }) {
       }}
       >
         <BrandMark />
-        <Typography sx={{ fontWeight: 700, fontSize: '1.1rem', color: '#fff' }}>Project Tracker</Typography>
+        <Typography sx={{ fontWeight: 700, fontSize: '1.1rem', color: '#fff' }}>ACME Inc.</Typography>
       </Box>
       <List component="nav" aria-label="Main" sx={{ px: 1.5, flex: 1 }}>
         {navItems(user.role).map((item) => {
@@ -145,7 +148,7 @@ export default function AppShell() {
               </IconButton>
               <Box sx={{ ml: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <BrandMark />
-                <Typography sx={{ fontWeight: 700 }}>Project Tracker</Typography>
+                <Typography sx={{ fontWeight: 700 }}>ACME Inc.</Typography>
               </Box>
             </Toolbar>
           </AppBar>

@@ -31,8 +31,16 @@ import {
  * A line manager also sees projects their report is borrowed onto by other managers.
  */
 function PersonDialog({ userId, onClose }) {
+  const { user: currentUser, isAdmin: isAdminUser } = useAuth();
   const { data, loading, error } = useApi(() => api.get(`/users/${userId}`), [userId]);
+<<<<<<< Updated upstream
   const borrowed = data?.other_projects || [];
+=======
+  const canViewSalary = Boolean(data) && (isAdminUser || data.id === currentUser?.id);
+  const salaryLabel = data?.salary != null && data.salary !== ''
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(data.salary))
+    : null;
+>>>>>>> Stashed changes
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle sx={{ pr: 6 }}>
@@ -50,6 +58,7 @@ function PersonDialog({ userId, onClose }) {
             {data.role === 'employee' && (
               <Typography>{data.manager_name ? `Reports to ${data.manager_name}` : 'Not assigned to a manager yet'}</Typography>
             )}
+            {canViewSalary && salaryLabel && <Typography>Salary: {salaryLabel}</Typography>}
             <Typography>{`${formatHours(data.total_hours)} logged in total (${formatDays(data.total_hours)})`}</Typography>
             <Box>
               <Typography variant="h4" component="h3" gutterBottom>{borrowed.length ? 'Your projects' : 'Projects'}</Typography>

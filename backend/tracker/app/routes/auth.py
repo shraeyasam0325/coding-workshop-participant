@@ -1,5 +1,6 @@
 """Authentication endpoints: login, token refresh, current user, change password."""
 
+from ..activity import log_activity
 from ..db import execute, fetch_one
 from ..errors import AuthenticationError, ValidationError
 from ..router import Context, router
@@ -22,7 +23,7 @@ def login(ctx: Context) -> tuple[int, dict]:
     )
     if user is None or not verify_password(password, user["password_hash"]):
         raise AuthenticationError("Incorrect username or password.")
-    return 200, {**issue_tokens(user), "user": public_user(user)}
+    return 200, {**issue_tokens(user), "user": public_user(user, viewer=user)}
 
 
 @router.add("POST", "/auth/refresh", public=True)
@@ -35,13 +36,13 @@ def refresh(ctx: Context) -> tuple[int, dict]:
     user = fetch_one(ctx.conn, "SELECT * FROM users WHERE id = %s AND archived_at IS NULL", (user_id,))
     if user is None:
         raise AuthenticationError("Your account is no longer active.")
-    return 200, {**issue_tokens(user), "user": public_user(user)}
+    return 200, {**issue_tokens(user), "user": public_user(user, viewer=user)}
 
 
 @router.add("GET", "/auth/me")
 def me(ctx: Context) -> tuple[int, dict]:
     """Return the signed-in user's profile."""
-    return 200, public_user(ctx.user)
+    return 200, public_user(ctx.user, viewer=ctx.user)
 
 
 @router.add("POST", "/auth/change-password")
@@ -56,4 +57,12 @@ def change_password(ctx: Context) -> tuple[int, dict]:
                               {"current_password": "Current password is incorrect."})  # error message, not a secret  # nosec B105
     execute(ctx.conn, "UPDATE users SET password_hash = %s, updated_at = now() WHERE id = %s",
             (hash_password(new), ctx.user["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "password_changed",
+        entity_type="user",
+        entity_id=ctx.user["id"],
+        user_id=ctx.user["id"],
+    )
     return 200, {"message": "Password updated."}

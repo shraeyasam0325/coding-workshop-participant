@@ -7,6 +7,7 @@ Nothing in this application is hard-deleted: every main table carries
 
 import logging
 from datetime import date, timedelta
+from decimal import Decimal
 
 from psycopg import Connection
 
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
     email           VARCHAR(254) NOT NULL,
     username        VARCHAR(30)  NOT NULL,
     job_title       VARCHAR(120) NOT NULL DEFAULT '',
+    salary          NUMERIC(14, 2) NOT NULL DEFAULT 0,
     role            VARCHAR(10)  NOT NULL CHECK (role IN ('admin', 'manager', 'employee')),
     manager_id      INTEGER REFERENCES users(id),
     password_hash   TEXT NOT NULL,
@@ -116,6 +118,21 @@ CREATE TABLE IF NOT EXISTS time_entries (
 );
 CREATE INDEX IF NOT EXISTS time_entries_project_idx ON time_entries (project_id);
 CREATE INDEX IF NOT EXISTS time_entries_user_idx ON time_entries (user_id, work_date);
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id            SERIAL PRIMARY KEY,
+    actor_id      INTEGER NOT NULL REFERENCES users(id),
+    action        VARCHAR(80) NOT NULL,
+    project_id    INTEGER REFERENCES projects(id),
+    milestone_id  INTEGER REFERENCES milestones(id),
+    entity_type   VARCHAR(40),
+    entity_id     INTEGER,
+    details       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS activity_logs_created_idx ON activity_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS activity_logs_actor_idx ON activity_logs (actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS activity_logs_project_idx ON activity_logs (project_id, created_at DESC);
 """
 
 
@@ -139,13 +156,14 @@ def reset_schema_flag() -> None:
 
 
 def _insert_user(conn: Connection, name: str, email: str, username: str, job_title: str,
-                 role: str, password: str, manager_id: int | None = None) -> int:
+                 role: str, password: str, manager_id: int | None = None,
+                 salary: Decimal | int | float = 0) -> int:
     """Insert a user and return the new id."""
     row = fetch_one(
         conn,
-        """INSERT INTO users (name, email, username, job_title, role, manager_id, password_hash)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (name, email, username, job_title, role, manager_id, hash_password(password)),
+        """INSERT INTO users (name, email, username, job_title, salary, role, manager_id, password_hash)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (name, email, username, job_title, Decimal(str(salary)), role, manager_id, hash_password(password)),
     )
     return row["id"]
 
@@ -158,7 +176,7 @@ def _seed(conn: Connection) -> None:
     logger.info("Seeding initial admin account '%s'", config.SEED_ADMIN_USERNAME)
     admin_id = _insert_user(conn, "Alex Morgan", "admin@example.com",
                             config.SEED_ADMIN_USERNAME, "Administrator", "admin",
-                            config.SEED_ADMIN_PASSWORD)
+                            config.SEED_ADMIN_PASSWORD, salary=150000)
     if config.SEED_DEMO_DATA:
         _seed_demo(conn, admin_id)
 
@@ -168,17 +186,17 @@ def _seed_demo(conn: Connection, admin_id: int) -> None:
     mgr_pw = "Manager123!"  # demo account, documented in README  # nosec B105
     emp_pw = "Employee123!"  # demo account, documented in README  # nosec B105
     m1 = _insert_user(conn, "Maria Lopez", "maria.lopez@example.com", "mlopez",
-                      "Engineering Manager", "manager", mgr_pw)
+                      "Engineering Manager", "manager", mgr_pw, salary=180000)
     m2 = _insert_user(conn, "David Chen", "david.chen@example.com", "dchen",
-                      "Product Manager", "manager", mgr_pw)
+                      "Product Manager", "manager", mgr_pw, salary=170000)
     e1 = _insert_user(conn, "Aisha Patel", "aisha.patel@example.com", "apatel",
-                      "Software Engineer", "employee", emp_pw, m1)
+                      "Software Engineer", "employee", emp_pw, m1, salary=125000)
     e2 = _insert_user(conn, "Jordan Smith", "jordan.smith@example.com", "jsmith",
-                      "Data Analyst", "employee", emp_pw, m1)
+                      "Data Analyst", "employee", emp_pw, m1, salary=98000)
     e3 = _insert_user(conn, "Lena Novak", "lena.novak@example.com", "lnovak",
-                      "UX Designer", "employee", emp_pw, m2)
+                      "UX Designer", "employee", emp_pw, m2, salary=110000)
     e4 = _insert_user(conn, "Sam Okafor", "sam.okafor@example.com", "sokafor",
-                      "QA Engineer", "employee", emp_pw, m2)
+                      "QA Engineer", "employee", emp_pw, m2, salary=102000)
 
     today = date.today()
     start = today - timedelta(days=30)

@@ -14,6 +14,7 @@ from typing import Any
 
 from psycopg import Connection
 
+from ..activity import log_activity
 from ..db import execute, fetch_all, fetch_one
 from ..errors import ConflictError, ForbiddenError, NotFoundError
 from ..metrics import business_days, hours_to_days, percent, planned_hours
@@ -147,6 +148,18 @@ def create_project(ctx: Context) -> tuple[int, dict]:
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (name, description, manager_id, start, end, budget, status, ctx.user["id"]),
     )
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "project_created",
+        project_id=row["id"],
+        entity_type="project",
+        entity_id=row["id"],
+        project_name=name,
+        manager_id=manager_id,
+        status=status,
+        budget=float(budget),
+    )
     return 201, enrich_project(get_project_row(ctx.conn, row["id"]), ctx.user)
 
 
@@ -237,6 +250,17 @@ def update_project(ctx: Context) -> tuple[int, dict]:
         sets.append("completed_at = NULL")
     sets.append("updated_at = now()")
     execute(ctx.conn, f"UPDATE projects SET {', '.join(sets)} WHERE id = %s", [*params, project_id])  # nosec B608
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "project_updated",
+        project_id=project_id,
+        entity_type="project",
+        entity_id=project_id,
+        changed_fields=sorted(set(body)),
+        status=body.get("status") or project["status"],
+        budget=float(body.get("budget", project["budget"])),
+    )
     return 200, enrich_project(get_project_row(ctx.conn, project_id), ctx.user)
 
 
@@ -251,6 +275,16 @@ def archive_project(ctx: Context) -> tuple[int, None]:
         raise ConflictError("Only completed projects can be archived. Ask the manager to mark it complete first.")
     execute(ctx.conn, "UPDATE projects SET archived_at = now(), archived_by = %s WHERE id = %s",
             (ctx.user["id"], project["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "project_archived",
+        project_id=project["id"],
+        entity_type="project",
+        entity_id=project["id"],
+        project_name=project["name"],
+        status=project["status"],
+    )
     return 204, None
 
 

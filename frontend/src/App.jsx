@@ -13,6 +13,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import TimePage from './pages/TimePage';
 import PeoplePage from './pages/PeoplePage';
 import ArchivePage from './pages/ArchivePage';
+import ActivityPage from './pages/ActivityPage';
 
 /** Redirects to sign-in when there is no session. */
 function RequireAuth({ children }) {
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="time" element={<TimePage />} />
         <Route path="people" element={<RequireRole roles={['admin', 'manager']}><PeoplePage /></RequireRole>} />
+        <Route path="activity" element={<RequireRole roles={['admin']}><ActivityPage /></RequireRole>} />
         <Route path="archive" element={<RequireRole roles={['admin']}><ArchivePage /></RequireRole>} />
         <Route path="*" element={<NotFound />} />
       </Route>

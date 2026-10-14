@@ -76,7 +76,7 @@ export default function LoginPage() {
       }}
       >
         <Box>
-          <Typography component="p" sx={{ fontWeight: 700, color: tokens.marigold, mb: 2 }}>Project Tracker</Typography>
+          <Typography component="p" sx={{ fontWeight: 700, color: tokens.marigold, mb: 2 }}>ACME Inc.</Typography>
           <Typography variant="h1" component="p" sx={{ fontSize: { xs: '2rem', md: '2.75rem' }, maxWidth: '16ch', color: '#fff' }}>
             Every project, milestone and hour in one place.
           </Typography>

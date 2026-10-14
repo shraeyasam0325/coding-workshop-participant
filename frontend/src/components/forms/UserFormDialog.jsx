@@ -9,11 +9,11 @@ import { api } from '../../services/api';
 import { useAuth } from '../../services/AuthContext';
 import { ROLE_LABEL, SHOW_EMPTY_OPTION } from '../../utils/format';
 import {
-  email, minLength, required, username,
+  email, minLength, nonNegative, required, username,
 } from '../../utils/validators';
 
 const emptyUser = {
-  name: '', email: '', username: '', job_title: '', role: 'employee', manager_id: '', password: '',
+  name: '', email: '', username: '', job_title: '', salary: '', role: 'employee', manager_id: '', password: '',
 };
 
 /**
@@ -29,6 +29,7 @@ export default function UserFormDialog({
     name: required(v.name, 'Name'),
     email: required(v.email, 'Email') || email(v.email),
     username: isAdmin ? required(v.username, 'Username') || username(v.username) : undefined,
+    salary: isAdmin ? required(v.salary, 'Salary') || nonNegative(v.salary) : undefined,
     password: isAdmin && !isEdit
       ? required(v.password, 'Password') || minLength(v.password, 8)
       : minLength(v.password, 8),
@@ -42,6 +43,7 @@ export default function UserFormDialog({
       email: user.email,
       username: user.username,
       job_title: user.job_title || '',
+      salary: user.salary ?? '',
       role: user.role,
       manager_id: user.manager_id ?? '',
       password: '',
@@ -55,6 +57,7 @@ export default function UserFormDialog({
         ...body,
         username: v.username.trim().toLowerCase(),
         job_title: v.job_title,
+        salary: Number(v.salary),
         role: v.role,
         manager_id: v.role === 'employee' && v.manager_id !== '' ? Number(v.manager_id) : null,
       };
@@ -87,6 +90,14 @@ export default function UserFormDialog({
             <TextField label="Username" required {...form.field('username')} />
             <TextField label="Job title" {...form.field('job_title')} />
           </Stack>
+          <TextField
+            label="Annual salary"
+            type="number"
+            inputProps={{ min: 0, step: 1000 }}
+            required
+            {...form.field('salary')}
+            helperText={form.errors.salary || 'Visible only to the admin and the employee themselves.'}
+          />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField select label="Role" {...form.field('role')}>
               {Object.entries(ROLE_LABEL).map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}

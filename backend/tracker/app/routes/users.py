@@ -6,10 +6,12 @@ User (employee / manager / admin) endpoints.
 * Employees have exactly one manager (``manager_id``) that only admins change.
 """
 
+from decimal import Decimal
 from typing import Any, Optional
 
 from psycopg import Connection
 
+from ..activity import log_activity
 from ..db import execute, fetch_all, fetch_one
 from ..errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from ..permissions import can_view_user, is_admin, is_manager, manager_can_edit, require_roles
@@ -17,7 +19,7 @@ from ..router import ROLES, Context, router
 from ..security import hash_password
 from ..validation import USERNAME_RE, Validator, parse_id, query_int
 
-PUBLIC_FIELDS = ("id", "name", "email", "username", "job_title", "role", "manager_id",
+PUBLIC_FIELDS = ("id", "name", "email", "username", "job_title", "salary", "role", "manager_id",
                  "created_at", "updated_at", "archived_at")
 
 USER_SELECT = """
@@ -31,9 +33,16 @@ USER_SELECT = """
 """
 
 
-def public_user(user: dict, extra: Optional[dict] = None) -> dict:
-    """Strip private fields (password hash) from a user row."""
+def can_view_salary(viewer: dict, target: dict) -> bool:
+    """Admins and the user themselves may see payroll details."""
+    return is_admin(viewer) or target["id"] == viewer["id"]
+
+
+def public_user(user: dict, extra: Optional[dict] = None, viewer: Optional[dict] = None) -> dict:
+    """Strip private fields (password hash) from a user row and redact salary when not allowed."""
     data = {key: user.get(key) for key in PUBLIC_FIELDS}
+    if viewer is None or not can_view_salary(viewer, user):
+        data["salary"] = None
     for key in ("manager_name", "total_hours", "project_count", "team_size"):
         if key in user:
             data[key] = user[key]
@@ -107,7 +116,7 @@ def list_users(ctx: Context) -> tuple[int, list[dict]]:
         params.extend([f"%{search}%"] * 4)
 
     rows = fetch_all(ctx.conn, USER_SELECT + " WHERE " + " AND ".join(where) + " ORDER BY u.name", params)
-    return 200, [public_user(r, {"on_my_team": r["manager_id"] == user["id"]}) for r in rows]
+    return 200, [public_user(r, {"on_my_team": r["manager_id"] == user["id"]}, viewer=user) for r in rows]
 
 
 @router.add("GET", "/users/{id}")
@@ -151,7 +160,7 @@ def get_user(ctx: Context) -> tuple[int, dict]:
         "projects": projects,
         "other_projects": other_projects,
         "can_edit": is_admin(ctx.user) or manager_can_edit(ctx.user, target),
-    })
+    }, viewer=ctx.user)
 
 
 @router.add("POST", "/users")
@@ -166,6 +175,7 @@ def create_user(ctx: Context) -> tuple[int, dict]:
     job_title = v.string("job_title", max_len=120) or ""
     role = v.choice("role", ROLES, required=True) or "employee"
     password = v.string("password", required=True, min_len=8, max_len=200)
+    salary = v.decimal("salary", required=True, min_value=Decimal("0"))
     manager_id = v.integer("manager_id")
     _validate_manager(ctx.conn, v, manager_id, role)
     v.raise_if_errors()
@@ -173,11 +183,23 @@ def create_user(ctx: Context) -> tuple[int, dict]:
 
     row = fetch_one(
         ctx.conn,
-        """INSERT INTO users (name, email, username, job_title, role, manager_id, password_hash)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (name, email, username, job_title, role, manager_id, hash_password(password)),
+        """INSERT INTO users (name, email, username, job_title, salary, role, manager_id, password_hash)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (name, email, username, job_title, salary, role, manager_id, hash_password(password)),
     )
-    return 201, public_user(get_user_or_404(ctx.conn, row["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "user_created",
+        entity_type="user",
+        entity_id=row["id"],
+        user_id=row["id"],
+        username=username,
+        role=role,
+        manager_id=manager_id,
+        salary=float(salary),
+    )
+    return 201, public_user(get_user_or_404(ctx.conn, row["id"]), viewer=ctx.user)
 
 
 @router.add("PUT", "/users/{id}")
@@ -203,6 +225,7 @@ def update_user(ctx: Context) -> tuple[int, dict]:
     job_title = v.string("job_title", max_len=120)
     role = v.choice("role", ROLES, required=True)
     password = v.string("password", min_len=8, max_len=200)
+    salary = v.decimal("salary", min_value=Decimal("0")) if v.has("salary") else None
     new_role = role or target["role"]
     manager_id = v.integer("manager_id") if v.has("manager_id") else target["manager_id"]
     if new_role != "employee" and not v.has("manager_id"):
@@ -216,7 +239,7 @@ def update_user(ctx: Context) -> tuple[int, dict]:
 
     updates = {
         "name": name, "email": email, "username": username, "job_title": job_title,
-        "role": role,
+        "salary": salary, "role": role,
     }
     sets = [f"{col} = %s" for col, val in updates.items() if val is not None]
     params: list[Any] = [val for val in updates.values() if val is not None]
@@ -228,7 +251,19 @@ def update_user(ctx: Context) -> tuple[int, dict]:
             params.append(hash_password(password))
     sets.append("updated_at = now()")
     execute(ctx.conn, f"UPDATE users SET {', '.join(sets)} WHERE id = %s", [*params, target["id"]])  # nosec B608
-    return 200, public_user(get_user_or_404(ctx.conn, target["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "user_updated",
+        entity_type="user",
+        entity_id=target["id"],
+        user_id=target["id"],
+        changed_fields=sorted(set(v.data) - {"password"}),
+        role=new_role,
+        manager_id=manager_id,
+        salary=float(salary) if salary is not None else None,
+    )
+    return 200, public_user(get_user_or_404(ctx.conn, target["id"]), viewer=ctx.user)
 
 
 def _check_role_change(ctx: Context, target: dict, new_role: str) -> None:
@@ -272,6 +307,16 @@ def archive_user(ctx: Context) -> tuple[int, None]:
             (target["id"],))
     execute(ctx.conn, "UPDATE users SET archived_at = now(), archived_by = %s WHERE id = %s",
             (ctx.user["id"], target["id"]))
+    log_activity(
+        ctx.conn,
+        ctx.user["id"],
+        "user_archived",
+        entity_type="user",
+        entity_id=target["id"],
+        user_id=target["id"],
+        username=target["username"],
+        role=target["role"],
+    )
     return 204, None
 
 
