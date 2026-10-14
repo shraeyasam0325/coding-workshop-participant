@@ -60,6 +60,27 @@ describe('PeoplePage', () => {
     expect(await screen.findByText('Reports to David Chen')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Portal' })).toBeInTheDocument();
   });
+
+  it('shows a line manager where their report is borrowed, without a link', async () => {
+    signInAs(users.manager);
+    mockApi(vi, {
+      'GET /auth/me': users.manager,
+      'GET /users': employees,
+      'GET /users/6': {
+        ...employees[2],
+        projects: [],
+        other_projects: [{
+          id: 9, name: 'Warehouse', status: 'active', manager_name: 'Maria Lopez', hours: 12,
+        }],
+      },
+    });
+    renderWithProviders(<PeoplePage />, { route: '/people' });
+    await userEvent.click(await screen.findByText('Sam Okafor'));
+    expect(await screen.findByText('Also working on')).toBeInTheDocument();
+    expect(screen.getByText('Managed by Maria Lopez, 12 h logged')).toBeInTheDocument();
+    expect(screen.getByText('Not on any of your projects.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Warehouse' })).not.toBeInTheDocument();
+  });
 });
 
 describe('TimePage', () => {

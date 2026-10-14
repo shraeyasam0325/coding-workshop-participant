@@ -273,6 +273,23 @@ class TestProjects:
         # One employee, many projects.
         assert admin.get(f"/users/{own[0]}")[1]["project_count"] == 2
 
+    def test_line_manager_sees_where_report_is_borrowed(self, manager, manager2):
+        # Lena reports to David but is also on Maria's portal project.
+        pid = _project_id(manager, "Customer Portal Redesign")
+        lena = _user_id(manager, "lnovak")
+        assert manager.post("/time-entries", {"project_id": pid, "user_id": lena,
+                                              "work_date": TODAY.isoformat(), "hours": 5})[0] == 201
+        status, profile = manager2.get(f"/users/{lena}")
+        assert status == 200
+        assert [p["name"] for p in profile["projects"]] == ["Data Warehouse Migration"]
+        borrowed = profile["other_projects"]
+        assert [(p["name"], p["manager_name"]) for p in borrowed] == [("Customer Portal Redesign", "Maria Lopez")]
+        assert float(borrowed[0]["hours"]) == 5
+        # David still cannot open Maria's project itself.
+        assert manager2.get(f"/projects/{pid}")[0] == 404
+        # Only the line manager gets this view: Maria viewing Lena sees no other projects.
+        assert manager.get(f"/users/{lena}")[1]["other_projects"] == []
+
     def test_assign_rejects_non_employees_and_unassign_keeps_time(self, admin, manager):
         pid = _project_id(manager, "Customer Portal Redesign")
         assert manager.post(f"/projects/{pid}/members", {"user_ids": [_user_id(admin, "dchen")]})[0] == 400

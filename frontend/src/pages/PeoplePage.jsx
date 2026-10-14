@@ -26,9 +26,13 @@ import {
   formatDays, formatHours, ROLE_LABEL, SHOW_EMPTY_OPTION,
 } from '../utils/format';
 
-/** Read-only profile: who someone reports to, their projects and hours. */
+/**
+ * Read-only profile: who someone reports to, their projects and hours.
+ * A line manager also sees projects their report is borrowed onto by other managers.
+ */
 function PersonDialog({ userId, onClose }) {
   const { data, loading, error } = useApi(() => api.get(`/users/${userId}`), [userId]);
+  const borrowed = data?.other_projects || [];
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle sx={{ pr: 6 }}>
@@ -48,9 +52,9 @@ function PersonDialog({ userId, onClose }) {
             )}
             <Typography>{`${formatHours(data.total_hours)} logged in total (${formatDays(data.total_hours)})`}</Typography>
             <Box>
-              <Typography variant="h4" component="h3" gutterBottom>Projects</Typography>
+              <Typography variant="h4" component="h3" gutterBottom>{borrowed.length ? 'Your projects' : 'Projects'}</Typography>
               {data.projects.length === 0 ? (
-                <Typography color="text.secondary">Not on any active projects.</Typography>
+                <Typography color="text.secondary">{borrowed.length ? 'Not on any of your projects.' : 'Not on any active projects.'}</Typography>
               ) : (
                 <List dense disablePadding>
                   {data.projects.map((p) => (
@@ -64,6 +68,24 @@ function PersonDialog({ userId, onClose }) {
                 </List>
               )}
             </Box>
+            {borrowed.length > 0 && (
+              <Box>
+                <Typography variant="h4" component="h3" gutterBottom>Also working on</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                  Projects run by other managers. Only their manager or an admin can open them.
+                </Typography>
+                <List dense disablePadding>
+                  {borrowed.map((p) => (
+                    <ListItem key={p.id} disableGutters secondaryAction={<StatusChip status={p.status} />}>
+                      <ListItemText
+                        primary={p.name}
+                        secondary={`Managed by ${p.manager_name}, ${formatHours(p.hours)} logged`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
           </Stack>
         )}
       </DialogContent>

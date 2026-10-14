@@ -130,8 +130,26 @@ def get_user(ctx: Context) -> tuple[int, dict]:
         sql += " AND p.manager_id = %s"
         params.append(ctx.user["id"])
     projects = fetch_all(ctx.conn, sql + " ORDER BY p.name", params)
+
+    other_projects: list[dict] = []
+    if is_manager(ctx.user) and target.get("manager_id") == ctx.user["id"]:
+        # A line manager sees, read-only, where their direct report is borrowed by other managers.
+        other_projects = fetch_all(
+            ctx.conn,
+            """SELECT p.id, p.name, p.status, p.estimated_end_date, m.name AS manager_name,
+                      COALESCE((SELECT sum(t.hours) FROM time_entries t WHERE t.project_id = p.id
+                                AND t.user_id = %s AND t.archived_at IS NULL), 0) AS hours
+               FROM project_members pm
+               JOIN projects p ON p.id = pm.project_id
+               JOIN users m ON m.id = p.manager_id
+               WHERE pm.user_id = %s AND pm.removed_at IS NULL
+                 AND p.archived_at IS NULL AND p.manager_id <> %s
+               ORDER BY p.name""",
+            (target["id"], target["id"], ctx.user["id"]),
+        )
     return 200, public_user(target, {
         "projects": projects,
+        "other_projects": other_projects,
         "can_edit": is_admin(ctx.user) or manager_can_edit(ctx.user, target),
     })
 
