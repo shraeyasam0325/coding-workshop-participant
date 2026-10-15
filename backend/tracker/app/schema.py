@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 CREATE INDEX IF NOT EXISTS activity_logs_created_idx ON activity_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS activity_logs_actor_idx ON activity_logs (actor_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS activity_logs_project_idx ON activity_logs (project_id, created_at DESC);
+
+-- Columns added after the first release: CREATE TABLE IF NOT EXISTS skips existing
+-- tables, so databases created earlier (e.g. the deployed Aurora one) get them here.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC(14, 2) NOT NULL DEFAULT 0;
 """
 
 

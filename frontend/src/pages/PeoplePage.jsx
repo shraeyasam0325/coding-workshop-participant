@@ -33,14 +33,11 @@ import {
 function PersonDialog({ userId, onClose }) {
   const { user: currentUser, isAdmin: isAdminUser } = useAuth();
   const { data, loading, error } = useApi(() => api.get(`/users/${userId}`), [userId]);
-<<<<<<< Updated upstream
   const borrowed = data?.other_projects || [];
-=======
   const canViewSalary = Boolean(data) && (isAdminUser || data.id === currentUser?.id);
   const salaryLabel = data?.salary != null && data.salary !== ''
     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(data.salary))
     : null;
->>>>>>> Stashed changes
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle sx={{ pr: 6 }}>
