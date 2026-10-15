@@ -93,6 +93,7 @@ Starts the complete development environment with hot-reload.
 **What it does**:
 
 * Checks LocalStack is running
+* Installs Python 3.13 backend requirements needed to package Lambda functions
 * Verifies backend is deployed
 * Generates `.env.local` for frontend
 * Starts proxy server on port 3001 (CORS workaround)

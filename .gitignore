@@ -256,3 +256,12 @@ tfplan
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
+__pycache__/
+.pytest_cache/
+.coverage
+
+# Python packages start-dev.sh installs into each backend service for Lambda packaging
+backend/*/.pip_installed
+backend/*/*.dist-info/
+backend/*/psycopg*/
+backend/*/jwt/
